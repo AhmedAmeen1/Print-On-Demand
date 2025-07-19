@@ -24,7 +24,7 @@ namespace POD.Models
         [MaxLength(20)]
         public string PhoneNumber { get; set; }
 
-        public bool IsVerified { get; set; } = false;
+        public bool IsVerified { get; set; } = true;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

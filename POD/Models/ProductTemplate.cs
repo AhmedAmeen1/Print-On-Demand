@@ -23,6 +23,8 @@ namespace POD.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal BasePrice { get; set; }
 
+        public string? Elements { get; set; }
+
         public ProductCategory Category { get; set; }
 
         [MaxLength(500)]
@@ -42,10 +44,9 @@ namespace POD.Models
     public enum ProductCategory
     {
         TShirt,
+        Pants,
         Hoodie,
         Mug,
-        Poster,
-        Sticker,
-        Other
+        PhoneCase,
     }
 }

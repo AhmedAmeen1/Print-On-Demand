@@ -10,5 +10,7 @@
         public DateTime CreatedAt { get; set; }
         public int ProductTemplateId { get; set; }
         public string UserId { get; set; }
+        public string? Elements { get; set; }
+
     }
 }

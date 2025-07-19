@@ -5,11 +5,8 @@ using Microsoft.Extensions.Options;
 using POD.DTO;
 using POD.Models;
 using Stripe;
+using Stripe.Checkout;
 using System.Security.Claims;
-using System.IO;
-using System.Threading.Tasks;
-using System;
-using System.Collections.Generic;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -18,12 +15,14 @@ public class PaymentsController : ControllerBase
 {
     private readonly Context _context;
     private readonly StripeSettings _stripeSettings;
+    private readonly string _webhookSecret;
 
     public PaymentsController(Context context, IOptions<StripeSettings> stripeOptions)
     {
         _context = context;
         _stripeSettings = stripeOptions.Value;
         StripeConfiguration.ApiKey = _stripeSettings.SecretKey;
+        _webhookSecret = _stripeSettings.WebhookSecret;
     }
 
     // POST: api/Payments/CreatePaymentIntent
@@ -57,17 +56,71 @@ public class PaymentsController : ControllerBase
         });
     }
 
+    // POST: api/Payments/CreateCheckoutSession
+    [HttpPost("CreateCheckoutSession")]
+    [AllowAnonymous] // Or [Authorize(Roles = "User")] if you want only logged-in users
+    public async Task<IActionResult> CreateCheckoutSession([FromBody] CreateCheckoutSessionDTO dto)
+    {
+        var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == dto.OrderId);
+        if (order == null) return NotFound("Order not found");
+
+        var domain = "https://print-on-demand.runasp.net";
+        var options = new SessionCreateOptions
+        {
+            PaymentMethodTypes = new List<string> { "card" },
+            LineItems = new List<SessionLineItemOptions>
+            {
+                new SessionLineItemOptions
+                {
+                    PriceData = new SessionLineItemPriceDataOptions
+                    {
+                        Currency = "usd",
+                        UnitAmount = (long)(order.TotalAmount * 100),
+                        ProductData = new SessionLineItemPriceDataProductDataOptions
+                        {
+                            Name = $"Order #{order.OrderId}"
+                        }
+                    },
+                    Quantity = 1
+                }
+            },
+            Mode = "payment",
+            SuccessUrl = $"{domain}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
+            CancelUrl = $"{domain}/payment-cancel"
+        };
+
+        var service = new SessionService();
+        var session = await service.CreateAsync(options);
+
+        return Ok(new { url = session.Url });
+    }
+
     // POST: api/Payments/StripeWebhook
     [AllowAnonymous]
     [HttpPost("StripeWebhook")]
     public async Task<IActionResult> StripeWebhook()
     {
-        var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-        var stripeEvent = EventUtility.ConstructEvent(
-            json,
-            Request.Headers["Stripe-Signature"],
-            "your_webhook_secret_here" // Replace with your actual webhook secret
-        );
+        string json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
+        Event stripeEvent;
+
+        try
+        {
+            stripeEvent = EventUtility.ConstructEvent(
+                json,
+                Request.Headers["Stripe-Signature"],
+                _webhookSecret
+            );
+        }
+        catch (StripeException e)
+        {
+            // Invalid signature or payload
+            return BadRequest($"Stripe webhook error: {e.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Other errors
+            return BadRequest($"Webhook error: {ex.Message}");
+        }
 
         if (stripeEvent.Type == "payment_intent.succeeded")
         {
@@ -83,7 +136,7 @@ public class PaymentsController : ControllerBase
                 {
                     OrderId = order.OrderId,
                     Amount = (decimal)paymentIntent.AmountReceived / 100,
-                    Method = POD.Models.PaymentMethod.Card, // Fully qualified
+                    Method = POD.Models.PaymentMethod.Card,
                     Status = PaymentStatus.Completed,
                     PaymentDate = DateTime.UtcNow,
                     TransactionId = paymentIntent.Id
@@ -96,4 +149,10 @@ public class PaymentsController : ControllerBase
 
         return Ok();
     }
+}
+
+// DTO for Checkout Session
+public class CreateCheckoutSessionDTO
+{
+    public int OrderId { get; set; }
 }

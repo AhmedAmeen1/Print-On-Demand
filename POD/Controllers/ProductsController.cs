@@ -35,36 +35,20 @@ namespace POD.Controllers
 
             if (sellerProfile == null) return NotFound("Seller profile not found");
 
-            return sellerProfile.ProductTemplates.Select(pt => new ProductTemplateResponseDTO
-            {
-                ProductTemplateId = pt.ProductTemplateId,
-                Name = pt.Name,
-                Description = pt.Description,
-                BasePrice = pt.BasePrice,
-                Category = pt.Category,
-                ImageUrl = pt.ImageUrl,
-                IsActive = pt.IsActive,
-                CreatedAt = pt.CreatedAt,
-                SellerProfileId = pt.SellerProfileId
-            }).ToList();
+            return sellerProfile.ProductTemplates.Select(pt => MapToTemplateResponse(pt)).ToList();
         }
-
 
         // GET: api/Products/PublicTemplates
         [HttpGet("PublicTemplates")]
-        [AllowAnonymous] // Or [Authorize] if you want only logged-in users
+        [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<ProductTemplateResponseDTO>>> GetPublicProductTemplates()
         {
             var templates = await _context.ProductTemplates
-                .Where(pt => pt.IsActive) // show only active templates
+                .Where(pt => pt.IsActive)
                 .ToListAsync();
 
             return templates.Select(pt => MapToTemplateResponse(pt)).ToList();
         }
-
-
-
-
 
         // POST: api/Products/Templates (for sellers)
         [HttpPost("Templates")]
@@ -84,6 +68,7 @@ namespace POD.Controllers
                 BasePrice = dto.BasePrice,
                 Category = dto.Category,
                 ImageUrl = dto.ImageUrl,
+                Elements = dto.Elements,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 SellerProfileId = sellerProfile.SellerProfileId
@@ -108,7 +93,7 @@ namespace POD.Controllers
 
         // POST: api/Products/Custom (for users)
         [HttpPost("Custom")]
-        [Authorize(Roles = "User")]
+        [Authorize]
         public async Task<ActionResult<CustomProductResponseDTO>> CreateCustomProduct(CustomProductDTO dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -124,6 +109,7 @@ namespace POD.Controllers
                 CustomDescription = dto.CustomDescription,
                 CustomImageUrl = dto.CustomImageUrl,
                 Price = dto.Price,
+                Elements = dto.Elements,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -158,6 +144,7 @@ namespace POD.Controllers
                 BasePrice = template.BasePrice,
                 Category = template.Category,
                 ImageUrl = template.ImageUrl,
+                Elements = template.Elements,
                 IsActive = template.IsActive,
                 CreatedAt = template.CreatedAt,
                 SellerProfileId = template.SellerProfileId
@@ -173,6 +160,7 @@ namespace POD.Controllers
                 CustomDescription = customProduct.CustomDescription,
                 CustomImageUrl = customProduct.CustomImageUrl,
                 Price = customProduct.Price,
+                Elements = customProduct.Elements,
                 CreatedAt = customProduct.CreatedAt,
                 ProductTemplateId = customProduct.ProductTemplateId,
                 UserId = customProduct.UserId

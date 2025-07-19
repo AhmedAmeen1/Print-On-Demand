@@ -13,5 +13,7 @@ namespace POD.DTO
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public int SellerProfileId { get; set; }
+        public string? Elements { get; set; }
+
     }
 }

@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using POD.Models;
 using System.Text;
+using CloudinaryDotNet;
+
 
 namespace POD
 {
@@ -23,15 +25,26 @@ namespace POD
                 options.SuppressModelStateInvalidFilter = true;
             });
 
-            // Add this line to enable roles
             builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
                 .AddEntityFrameworkStores<Context>()
-                .AddRoles<IdentityRole>(); // This enables roles
+                .AddRoles<IdentityRole>();
 
             builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("Stripe"));
             Stripe.StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
 
-
+      
+            // ---- CORS: Allow any origin, any header, any method ----
+            const string CorsPolicyName = "OpenCorsPolicy";
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy(name: CorsPolicyName, policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyHeader()
+                          .AllowAnyMethod();
+                });
+            });
+            // --------------------------------------------------------
 
             builder.Services.AddAuthentication(options =>
             {
@@ -48,10 +61,18 @@ namespace POD
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = builder.Configuration["JWT:Issuer"],
-                    ValidAudience = builder.Configuration["JWT:Audience"],  
+                    ValidAudience = builder.Configuration["JWT:Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JWT:Key"]))
                 };
             });
+
+            // Configure Cloudinary
+            var cloudinarySection = builder.Configuration.GetSection("Cloudinary");
+            builder.Services.AddSingleton(x => new Cloudinary(new Account(
+                cloudinarySection["CloudName"],
+                cloudinarySection["ApiKey"],
+                cloudinarySection["ApiSecret"]
+            )));
 
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
@@ -60,17 +81,18 @@ namespace POD
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
-            
-                app.UseSwagger();
-                app.UseSwaggerUI();
-            
+            app.UseSwagger();
+            app.UseSwaggerUI();
 
             app.UseHttpsRedirection();
+
+            app.UseCors(CorsPolicyName); 
+
             app.UseAuthentication();
             app.UseAuthorization();
 
             app.MapControllers();
-            app.UseCors();
+
             app.Run();
         }
     }

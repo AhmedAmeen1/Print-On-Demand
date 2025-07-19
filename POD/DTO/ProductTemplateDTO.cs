@@ -10,5 +10,6 @@ namespace POD.DTO
         [Required] public decimal BasePrice { get; set; }
         [Required] public ProductCategory Category { get; set; }
         public string ImageUrl { get; set; }
+        public string? Elements { get; set; }
     }
 }

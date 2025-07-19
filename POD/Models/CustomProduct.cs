@@ -27,6 +27,8 @@ namespace POD.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal Price { get; set; }
 
+        public string? Elements { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties

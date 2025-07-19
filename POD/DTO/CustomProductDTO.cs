@@ -10,5 +10,7 @@ namespace POD.DTO
         public string CustomDescription { get; set; }
         public string CustomImageUrl { get; set; }
         [Required] public decimal Price { get; set; }
+        public string? Elements { get; set; }
+
     }
 }
