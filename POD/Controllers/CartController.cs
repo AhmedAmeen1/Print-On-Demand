@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +10,7 @@ namespace POD.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "User")]
+    [Authorize]
     public class CartController : ControllerBase
     {
         private readonly Context _context;
@@ -40,7 +39,7 @@ namespace POD.Controllers
                 CustomProductId = ci.CustomProductId,
                 Quantity = ci.Quantity,
                 AddedAt = ci.AddedAt,
-                CustomProduct = new CustomProductResponseDTO
+                CustomProduct = ci.CustomProduct == null ? null : new CustomProductResponseDTO
                 {
                     CustomProductId = ci.CustomProduct.CustomProductId,
                     CustomName = ci.CustomProduct.CustomName,
@@ -60,36 +59,52 @@ namespace POD.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            // Check if product exists
             var customProduct = await _context.CustomProducts
                 .FirstOrDefaultAsync(cp => cp.CustomProductId == dto.CustomProductId);
-            if (customProduct == null) return BadRequest("Invalid product");
+            if (customProduct == null)
+                return BadRequest("Invalid product");
 
-            // Check if item already in cart
             var existingItem = await _context.CartItems
-                .FirstOrDefaultAsync(ci =>
-                    ci.UserId == userId &&
-                    ci.CustomProductId == dto.CustomProductId);
+                .Include(ci => ci.CustomProduct)
+                .FirstOrDefaultAsync(ci => ci.UserId == userId && ci.CustomProductId == dto.CustomProductId);
 
             if (existingItem != null)
-            {
                 existingItem.Quantity += dto.Quantity;
-            }
             else
             {
-                var cartItem = new CartItem
+                existingItem = new CartItem
                 {
                     UserId = userId,
                     CustomProductId = dto.CustomProductId,
                     Quantity = dto.Quantity,
-                    AddedAt = DateTime.UtcNow
+                    AddedAt = DateTime.UtcNow,
+                    CustomProduct = customProduct
                 };
-                _context.CartItems.Add(cartItem);
+                _context.CartItems.Add(existingItem);
             }
 
             await _context.SaveChangesAsync();
 
-            return Ok();
+            var cartItemResponse = new CartItemResponseDTO
+            {
+                CartItemId = existingItem.CartItemId,
+                CustomProductId = existingItem.CustomProductId,
+                Quantity = existingItem.Quantity,
+                AddedAt = existingItem.AddedAt,
+                CustomProduct = existingItem.CustomProduct == null ? null : new CustomProductResponseDTO
+                {
+                    CustomProductId = existingItem.CustomProduct.CustomProductId,
+                    CustomName = existingItem.CustomProduct.CustomName,
+                    CustomDescription = existingItem.CustomProduct.CustomDescription,
+                    CustomImageUrl = existingItem.CustomProduct.CustomImageUrl,
+                    Price = existingItem.CustomProduct.Price,
+                    CreatedAt = existingItem.CustomProduct.CreatedAt,
+                    ProductTemplateId = existingItem.CustomProduct.ProductTemplateId,
+                    UserId = existingItem.CustomProduct.UserId
+                }
+            };
+
+            return Ok(cartItemResponse);
         }
 
         // PUT: api/Cart/{id}
@@ -98,9 +113,7 @@ namespace POD.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var cartItem = await _context.CartItems
-                .FirstOrDefaultAsync(ci =>
-                    ci.CartItemId == id &&
-                    ci.UserId == userId);
+                .FirstOrDefaultAsync(ci => ci.CartItemId == id && ci.UserId == userId);
 
             if (cartItem == null) return NotFound();
             if (quantity <= 0) return BadRequest("Quantity must be positive");
@@ -117,9 +130,7 @@ namespace POD.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var cartItem = await _context.CartItems
-                .FirstOrDefaultAsync(ci =>
-                    ci.CartItemId == id &&
-                    ci.UserId == userId);
+                .FirstOrDefaultAsync(ci => ci.CartItemId == id && ci.UserId == userId);
 
             if (cartItem == null) return NotFound();
 
@@ -139,9 +150,9 @@ namespace POD.Controllers
                 .Where(ci => ci.UserId == userId)
                 .ToListAsync();
 
-            if (!cartItems.Any()) return BadRequest("Cart is empty");
+            if (!cartItems.Any())
+                return BadRequest("Cart is empty");
 
-            // Create order
             var order = new Order
             {
                 UserId = userId,
@@ -150,7 +161,6 @@ namespace POD.Controllers
                 ShippingAddress = shippingAddress
             };
 
-            // Add order items
             foreach (var cartItem in cartItems)
             {
                 var orderItem = new OrderItem
@@ -165,16 +175,35 @@ namespace POD.Controllers
             }
 
             _context.Orders.Add(order);
-
-            // Clear cart
             _context.CartItems.RemoveRange(cartItems);
 
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(OrdersController.GetOrder),
-                new { id = order.OrderId },
-                MapToOrderResponse(order));
+            var createdOrder = await _context.Orders
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.CustomProduct)
+                .Include(o => o.Payments)
+                .FirstOrDefaultAsync(o => o.OrderId == order.OrderId);
+
+            if (createdOrder == null)
+                return NotFound("Order created but not found");
+
+            try
+            {
+                var response = MapToOrderResponse(createdOrder);
+                // <-- FIXED: specify controller name "Orders"
+                return CreatedAtAction(
+                    actionName: "GetOrder",
+                    controllerName: "Orders",
+                    routeValues: new { id = createdOrder.OrderId },
+                    value: response);
+            }
+            catch (Exception ex)
+            {
+                return Problem(detail: $"Error mapping order response: {ex.Message}", statusCode: 500);
+            }
         }
+
 
         private OrderResponseDTO MapToOrderResponse(Order order)
         {
@@ -187,13 +216,13 @@ namespace POD.Controllers
                 ShippedDate = order.ShippedDate,
                 DeliveredDate = order.DeliveredDate,
                 ShippingAddress = order.ShippingAddress,
-                OrderItems = order.OrderItems.Select(oi => new OrderItemResponseDTO
+                OrderItems = order.OrderItems?.Select(oi => new OrderItemResponseDTO
                 {
                     OrderItemId = oi.OrderItemId,
                     Quantity = oi.Quantity,
                     UnitPrice = oi.UnitPrice,
                     TotalPrice = oi.TotalPrice,
-                    CustomProduct = new CustomProductResponseDTO
+                    CustomProduct = oi.CustomProduct == null ? null : new CustomProductResponseDTO
                     {
                         CustomProductId = oi.CustomProduct.CustomProductId,
                         CustomName = oi.CustomProduct.CustomName,
@@ -204,8 +233,8 @@ namespace POD.Controllers
                         ProductTemplateId = oi.CustomProduct.ProductTemplateId,
                         UserId = oi.CustomProduct.UserId
                     }
-                }).ToList(),
-                Payments = order.Payments.Select(p => new PaymentResponseDTO
+                }).ToList() ?? new List<OrderItemResponseDTO>(),
+                Payments = order.Payments?.Select(p => new PaymentResponseDTO
                 {
                     PaymentId = p.PaymentId,
                     Amount = p.Amount,
@@ -213,7 +242,7 @@ namespace POD.Controllers
                     Method = p.Method,
                     PaymentDate = p.PaymentDate,
                     TransactionId = p.TransactionId
-                }).ToList()
+                }).ToList() ?? new List<PaymentResponseDTO>()
             };
         }
     }
