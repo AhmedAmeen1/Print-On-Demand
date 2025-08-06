@@ -7,8 +7,7 @@ namespace POD.Models
     {
         public Context(DbContextOptions<Context> options)
             : base(options)
-        {
-        }
+        { }
 
         public DbSet<Order> Orders { get; set; }
         public DbSet<Payment> Payments { get; set; }
@@ -22,13 +21,13 @@ namespace POD.Models
         {
             base.OnModelCreating(builder);
 
-            // Configure relationships
+            // Cascade delete on all relationships (NO restrict)
             builder.Entity<ApplicationUser>(entity =>
             {
                 entity.HasMany(u => u.Orders)
                       .WithOne(o => o.User)
                       .HasForeignKey(o => o.UserId)
-                      .OnDelete(DeleteBehavior.Restrict);
+                      .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasOne(u => u.SellerProfile)
                       .WithOne(s => s.User)
@@ -38,7 +37,7 @@ namespace POD.Models
                 entity.HasMany(u => u.CustomProducts)
                       .WithOne(cp => cp.User)
                       .HasForeignKey(cp => cp.UserId)
-                      .OnDelete(DeleteBehavior.Restrict);
+                      .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasMany(u => u.CartItems)
                       .WithOne(ci => ci.User)
@@ -72,7 +71,7 @@ namespace POD.Models
                 entity.HasMany(pt => pt.CustomProducts)
                       .WithOne(cp => cp.ProductTemplate)
                       .HasForeignKey(cp => cp.ProductTemplateId)
-                      .OnDelete(DeleteBehavior.Restrict);
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
             builder.Entity<CustomProduct>(entity =>
@@ -85,10 +84,10 @@ namespace POD.Models
                 entity.HasMany(cp => cp.OrderItems)
                       .WithOne(oi => oi.CustomProduct)
                       .HasForeignKey(oi => oi.CustomProductId)
-                      .OnDelete(DeleteBehavior.Restrict);
+                      .OnDelete(DeleteBehavior.Cascade); // Changed from Restrict to Cascade
             });
 
-            // Configure decimal precision
+            // Configure decimal precisions
             builder.Entity<Order>()
                    .Property(o => o.TotalAmount)
                    .HasPrecision(18, 2);

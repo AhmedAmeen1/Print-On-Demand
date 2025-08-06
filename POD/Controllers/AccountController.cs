@@ -178,6 +178,10 @@ namespace POD.Controllers
 
             if (!await _roleManager.RoleExistsAsync("Seller"))
                 await _roleManager.CreateAsync(new IdentityRole("Seller"));
+
+            if (!await _roleManager.RoleExistsAsync("Admin"))
+                await _roleManager.CreateAsync(new IdentityRole("Admin"));
         }
+
     }
 }

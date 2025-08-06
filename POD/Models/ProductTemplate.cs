@@ -23,11 +23,12 @@ namespace POD.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal BasePrice { get; set; }
 
+        [Column(TypeName = "nvarchar(max)")]
         public string? Elements { get; set; }
 
         public ProductCategory Category { get; set; }
 
-        [MaxLength(500)]
+        [Column(TypeName = "nvarchar(max)")]
         public string ImageUrl { get; set; }
 
         public bool IsActive { get; set; } = true;

@@ -1,11 +1,13 @@
 ﻿using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace POD.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class FilesController : ControllerBase
     {
         private readonly Cloudinary _cloudinary;

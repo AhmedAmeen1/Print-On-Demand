@@ -7,6 +7,10 @@ using POD.Models;
 using Stripe;
 using Stripe.Checkout;
 using System.Security.Claims;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.IO;
+using System;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -37,7 +41,7 @@ public class PaymentsController : ControllerBase
 
         var options = new PaymentIntentCreateOptions
         {
-            Amount = (long)(order.TotalAmount * 100), // Stripe works in cents
+            Amount = (long)(order.TotalAmount * 100),
             Currency = "usd",
             Metadata = new Dictionary<string, string>
             {
@@ -85,8 +89,13 @@ public class PaymentsController : ControllerBase
                 }
             },
             Mode = "payment",
-            SuccessUrl = $"{domain}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
-            CancelUrl = $"{domain}/payment-cancel"
+            SuccessUrl = "http://localhost:4200/payment-success",
+            CancelUrl = "http://localhost:4200/payment-cancel",
+            Metadata = new Dictionary<string, string> // <- Important: Add metadata for webhook
+            {
+                { "order_id", order.OrderId.ToString() },
+                { "user_id", order.UserId }
+            }
         };
 
         var service = new SessionService();
@@ -122,33 +131,77 @@ public class PaymentsController : ControllerBase
             return BadRequest($"Webhook error: {ex.Message}");
         }
 
-        if (stripeEvent.Type == "payment_intent.succeeded")
+        try
         {
-            var paymentIntent = (PaymentIntent)stripeEvent.Data.Object;
-            var orderId = int.Parse(paymentIntent.Metadata["order_id"]);
-            var order = await _context.Orders
-                .Include(o => o.Payments)
-                .FirstOrDefaultAsync(o => o.OrderId == orderId);
-
-            if (order != null)
+            if (stripeEvent.Type == "payment_intent.succeeded")
             {
-                var payment = new Payment
+                var paymentIntent = (PaymentIntent)stripeEvent.Data.Object;
+
+                if (!paymentIntent.Metadata.TryGetValue("order_id", out var orderIdStr) ||
+                    !int.TryParse(orderIdStr, out var orderId))
                 {
-                    OrderId = order.OrderId,
-                    Amount = (decimal)paymentIntent.AmountReceived / 100,
-                    Method = POD.Models.PaymentMethod.Card,
-                    Status = PaymentStatus.Completed,
-                    PaymentDate = DateTime.UtcNow,
-                    TransactionId = paymentIntent.Id
-                };
-                _context.Payments.Add(payment);
-                order.Status = OrderStatus.Processing;
-                await _context.SaveChangesAsync();
+                    // Missing or invalid order_id in metadata
+                    return BadRequest("Missing or invalid 'order_id' in PaymentIntent metadata.");
+                }
+
+                var order = await _context.Orders
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.OrderId == orderId);
+
+                if (order != null)
+                {
+                    var payment = new Payment
+                    {
+                        OrderId = order.OrderId,
+                        Amount = (decimal)paymentIntent.AmountReceived / 100,
+                        Method = POD.Models.PaymentMethod.Card,
+                        Status = PaymentStatus.Completed,
+                        PaymentDate = DateTime.UtcNow,
+                        TransactionId = paymentIntent.Id
+                    };
+                    _context.Payments.Add(payment);
+                    order.Status = OrderStatus.Processing;
+                    await _context.SaveChangesAsync();
+                }
             }
+            else if (stripeEvent.Type == "checkout.session.completed")
+            {
+                var session = (Session)stripeEvent.Data.Object;
+
+                if (!session.Metadata.TryGetValue("order_id", out var orderIdStr) ||
+                    !int.TryParse(orderIdStr, out var orderId))
+                {
+                    return BadRequest("Missing or invalid 'order_id' in Session metadata.");
+                }
+
+                var order = await _context.Orders
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.OrderId == orderId);
+
+                if (order != null)
+                {
+                    order.Status = OrderStatus.Processing;
+                    await _context.SaveChangesAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log or handle the exception appropriately in production
+            return BadRequest($"Webhook processing error: {ex.Message}");
         }
 
         return Ok();
     }
+
+    //[HttpGet("/payment-success")]
+    //[AllowAnonymous]
+    //public IActionResult PaymentSuccess()
+    //{
+    //    var sessionId = Request.Query["session_id"].ToString();
+    //    return Content($"Payment succeeded! Session ID: {sessionId}");
+    //}
+
 }
 
 // DTO for Checkout Session

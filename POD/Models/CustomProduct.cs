@@ -21,12 +21,13 @@ namespace POD.Models
         [MaxLength(1000)]
         public string CustomDescription { get; set; }
 
-        [MaxLength(500)]
+        [Column(TypeName = "nvarchar(max)")]
         public string CustomImageUrl { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal Price { get; set; }
 
+        [Column(TypeName = "nvarchar(max)")]
         public string? Elements { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

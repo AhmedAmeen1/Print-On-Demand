@@ -50,6 +50,21 @@ namespace POD.Controllers
             return templates.Select(pt => MapToTemplateResponse(pt)).ToList();
         }
 
+        // GET: api/Products/TopTemplates
+        [HttpGet("TopTemplates")]
+        [AllowAnonymous] // Or [Authorize] if you want only logged-in users
+        public async Task<ActionResult<IEnumerable<ProductTemplateResponseDTO>>> GetTopProductTemplates()
+        {
+            var templates = await _context.ProductTemplates
+                .Where(pt => pt.IsActive)
+                .OrderBy(pt => pt.CreatedAt) // or any ordering you prefer (e.g., newest first: OrderByDescending)
+                .Take(5)
+                .ToListAsync();
+
+            return templates.Select(pt => MapToTemplateResponse(pt)).ToList();
+        }
+
+
         // POST: api/Products/Templates (for sellers)
         [HttpPost("Templates")]
         [Authorize(Roles = "Seller")]
@@ -132,6 +147,35 @@ namespace POD.Controllers
             if (customProduct == null) return NotFound();
             return MapToCustomProductResponse(customProduct);
         }
+
+
+        // DELETE: api/Products/Templates/{id}
+        [HttpDelete("Templates/{id}")]
+        [Authorize(Roles = "Seller")]
+        public async Task<IActionResult> DeleteProductTemplate(int id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            // Get the seller profile for current user
+            var sellerProfile = await _context.SellerProfiles
+                .FirstOrDefaultAsync(sp => sp.UserId == userId);
+
+            if (sellerProfile == null)
+                return Unauthorized("You are not authorized to perform this action");
+
+            // Find the template and make sure it belongs to this seller
+            var template = await _context.ProductTemplates
+                .FirstOrDefaultAsync(pt => pt.ProductTemplateId == id && pt.SellerProfileId == sellerProfile.SellerProfileId);
+
+            if (template == null)
+                return NotFound("Product template not found or you do not have permission to delete it");
+
+            _context.ProductTemplates.Remove(template);
+            await _context.SaveChangesAsync();
+
+            return Ok("Product template deleted successfully");
+        }
+
 
         // Helper methods
         private ProductTemplateResponseDTO MapToTemplateResponse(ProductTemplate template)
